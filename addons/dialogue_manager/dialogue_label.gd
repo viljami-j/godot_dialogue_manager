@@ -18,26 +18,8 @@ signal skipped_typing()
 ## Emitted when typing finishes.
 signal finished_typing()
 
-
-# The action to press to skip typing.
-@export var skip_action: StringName = &"ui_cancel"
-
-## The speed with which the text types out.
-@export var seconds_per_step: float = 0.02
-
-## Automatically have a brief pause when these characters are encountered.
-@export var pause_at_characters: String = ".?!"
-
-## Don't auto pause if the charcter after the pause is one of these.
-@export var skip_pause_at_character_if_followed_by: String = ")\""
-
-## Don't auto pause after these abbreviations (only if "." is in `pause_at_characters`).[br]
-## Abbreviations are limitted to 5 characters in length [br]
-## Does not support multi-period abbreviations (ex. "p.m.")
-@export var skip_pause_at_abbreviations: PackedStringArray = ["Mr", "Mrs", "Ms", "Dr", "etc", "eg", "ex"]
-
-## The amount of time to pause when exposing a character present in pause_at_characters.
-@export var seconds_per_pause_step: float = 0.3
+## A resource that contains the settings to use with this DialogueLabel.
+@export var dialogue_label_settings: DialogueLabelSettingsResource
 
 
 ## The current line of dialogue.
@@ -85,7 +67,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Note: this will no longer be reached if using Dialogue Manager > 2.32.2. To make skip handling
 	# simpler (so all of mouse/keyboard/joypad are together) it is now the responsibility of the
 	# dialogue balloon.
-	if self.is_typing and visible_ratio < 1 and InputMap.has_action(skip_action) and event.is_action_pressed(skip_action):
+	if self.is_typing and visible_ratio < 1 and InputMap.has_action(dialogue_label_settings.skip_action) and event.is_action_pressed(dialogue_label_settings.skip_action):
 		get_viewport().set_input_as_handled()
 		skip_typing()
 
@@ -106,7 +88,7 @@ func type_out() -> void:
 
 	if get_total_character_count() == 0:
 		self.is_typing = false
-	elif seconds_per_step == 0:
+	elif dialogue_label_settings.seconds_per_step == 0:
 		_mutate_remaining_mutations()
 		visible_characters = get_total_character_count()
 		self.is_typing = false
@@ -136,7 +118,7 @@ func _type_next(delta: float, seconds_needed: float) -> void:
 
 	# Pause on characters like "."
 	if _should_auto_pause():
-		additional_waiting_seconds += seconds_per_pause_step
+		additional_waiting_seconds += dialogue_label_settings.seconds_per_pause_step
 
 	# Pause at literal [wait] directives
 	if _last_wait_index != visible_characters and additional_waiting_seconds > 0:
@@ -148,7 +130,7 @@ func _type_next(delta: float, seconds_needed: float) -> void:
 		if visible_characters <= get_total_character_count():
 			spoke.emit(get_parsed_text()[visible_characters - 1], visible_characters - 1, _get_speed(visible_characters))
 		# See if there's time to type out some more in this frame
-		seconds_needed += seconds_per_step * (1.0 / _get_speed(visible_characters))
+		seconds_needed += dialogue_label_settings.seconds_per_step * (1.0 / _get_speed(visible_characters))
 		if seconds_needed > delta:
 			_waiting_seconds += seconds_needed
 		else:
@@ -200,7 +182,7 @@ func _should_auto_pause() -> bool:
 	if visible_characters >= parsed_text.length(): return false
 
 	# Ignore pause characters if they are next to a non-pause character
-	if parsed_text[visible_characters] in skip_pause_at_character_if_followed_by.split():
+	if parsed_text[visible_characters] in dialogue_label_settings.skip_pause_at_character_if_followed_by.split():
 		return false
 
 	# Ignore "." if it's between two numbers
@@ -211,16 +193,25 @@ func _should_auto_pause() -> bool:
 
 	# Ignore "." if it's used in an abbreviation
 	# Note: does NOT support multi-period abbreviations (ex. p.m.)
-	if "." in pause_at_characters and parsed_text[visible_characters - 1] == ".":
-		for abbreviation in skip_pause_at_abbreviations:
+	if "." in dialogue_label_settings.pause_at_characters and parsed_text[visible_characters - 1] == ".":
+		for abbreviation in dialogue_label_settings.skip_pause_at_abbreviations:
 			if visible_characters >= abbreviation.length():
 				var previous_characters: String = parsed_text.substr(visible_characters - abbreviation.length() - 1, abbreviation.length())
 				if previous_characters == abbreviation:
 					return false
 
 	# Ignore two non-"." characters next to each other
-	var other_pause_characters: PackedStringArray = pause_at_characters.replace(".", "").split()
+	var other_pause_characters: PackedStringArray = dialogue_label_settings.pause_at_characters.replace(".", "").split()
 	if visible_characters > 1 and parsed_text[visible_characters - 1] in other_pause_characters and parsed_text[visible_characters] in other_pause_characters:
 		return false
 
-	return parsed_text[visible_characters - 1] in pause_at_characters.split()
+	return parsed_text[visible_characters - 1] in dialogue_label_settings.pause_at_characters.split()
+
+func _get_configuration_warnings():
+	var warnings = []
+	if dialogue_label_settings == null:
+		warnings.append("'Dialogue Label Settings' is not assigned - this results to undefined behaviour.")
+		warnings.append("Please assign a 'DialogueSettingsResource' to 'Dialogue Label Settings' either by creating a new built-in resource, or by creating a separate 'DialogueLabelSettingsResource' file and assigning it here.")
+	const save_reminder = "Save and click anywhere after adjusting to dismiss the resolved warning(s)."
+	if warnings.size() != 0: warnings.append(save_reminder)
+	return warnings # -> no warnings
